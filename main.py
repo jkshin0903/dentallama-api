@@ -23,7 +23,7 @@ from classes.dental_inference import DentalInference
 from classes.model_loader import load_model_from_env
 
 # GPU 설정
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"  # 0 사용 할시 (~48G 사용)
+os.environ["CUDA_VISIBLE_DEVICES"] = "4"  # 0 사용 할시 (~48G 사용)
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # 다른사람이 실수로 접속해서 메모리 초과 되서 끊기는 것 방지 가능
 os.environ["TORCH_USE_CUDA_DSA"] = "1"
 
