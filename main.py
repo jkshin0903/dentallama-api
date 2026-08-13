@@ -21,6 +21,8 @@ from pymilvus import connections
 from classes.chat import ChatRequest, FileData
 from classes.dental_inference import DentalInference
 from classes.model_loader import load_model_from_env
+from classes.orthoplanner_inference import OrthoPlannerInference, build_from_env
+from classes.orthoplanner_schema import TreatmentPlanRequest, TreatmentPlanResponse
 
 # GPU 설정
 os.environ["CUDA_VISIBLE_DEVICES"] = "4"  # 0 사용 할시 (~48G 사용)
@@ -63,6 +65,10 @@ DEFAULT_USE_RAG = (
 
 inference_system: Optional[DentalInference] = None
 _model_loaded: bool = False  # 모델 로드 상태 추적
+orthoplanner_system: Optional[OrthoPlannerInference] = None
+ORTHOPLANNER_PRELOAD = (
+    os.getenv("ORTHOPLANNER_PRELOAD", "false").lower() not in {"0", "false", "no"}
+)
 
 
 def _build_inference_system() -> DentalInference:
@@ -129,6 +135,16 @@ def _build_inference_system() -> DentalInference:
     print("[모델 로드 완료] 모델이 성공적으로 로드되었습니다.")
     
     return inference_system
+
+
+def _get_orthoplanner(load: bool = False) -> OrthoPlannerInference:
+    """Return the OrthoPlanner wrapper, optionally loading weights."""
+    global orthoplanner_system
+    if orthoplanner_system is None:
+        orthoplanner_system = build_from_env(BASE_DIR)
+    if load and not orthoplanner_system.loaded:
+        orthoplanner_system.load()
+    return orthoplanner_system
 
 
 def _normalize_bool(value: Any, default: bool) -> bool:
@@ -226,6 +242,11 @@ async def lifespan(_: FastAPI):
     # 모델이 이미 로드되어 있지 않을 때만 로드
     if not _model_loaded:
         inference_system = _build_inference_system()
+    if ORTHOPLANNER_PRELOAD:
+        try:
+            _get_orthoplanner(load=True)
+        except Exception as e:
+            print(f"[OrthoPlanner] preload failed: {e}", flush=True)
     try:
         yield
     finally:
@@ -307,10 +328,11 @@ def cleanup_temp_files(file_paths):
     print("[파일 정리] 완료")
 
 
-@app.post("/api/chat")
-def chat(req: ChatRequest):
+@app.post("/api/v1/gemma/treatment-plan")
+@app.post("/api/chat", include_in_schema=False)
+def gemma_treatment_plan(req: ChatRequest):
     print("\n" + "="*80)
-    print("[요청 수신] POST /api/chat")
+    print("[요청 수신] POST /api/v1/gemma/treatment-plan")
     print("="*80)
     print(f"[요청 정보] ID: {req.id}, 모델: {req.model}, 메시지: {len(req.messages)}, 파일: {len(req.files) if req.files else 0}")
     
@@ -391,6 +413,47 @@ def chat(req: ChatRequest):
             cleanup_temp_files([file_info["path"] for file_info in decoded_files])
 
 
+@app.post("/api/v1/orthoplanner/treatment-plan", response_model=TreatmentPlanResponse)
+@app.post("/api/v1/treatment-plan", include_in_schema=False, response_model=TreatmentPlanResponse)
+def orthoplanner_treatment_plan(req: TreatmentPlanRequest):
+    print("\n" + "=" * 80)
+    print("[요청 수신] POST /api/v1/orthoplanner/treatment-plan")
+    print("=" * 80)
+    try:
+        ortho = _get_orthoplanner(load=True)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"OrthoPlanner 로드 실패: {e}") from e
+
+    try:
+        result = ortho.predict(req)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OrthoPlanner 추론 실패: {e}") from e
+
+    print(f"[OrthoPlanner] plan length={len(result.treatment_plan)}", flush=True)
+    print("=" * 80 + "\n")
+    return result
+
+
+@app.get("/api/v1/orthoplanner/health")
+@app.get("/api/v1/ortho/health", include_in_schema=False)
+def orthoplanner_health():
+    ortho = _get_orthoplanner(load=False)
+    return {
+        "status": "ok" if ortho.loaded else "not_loaded",
+        "loaded": ortho.loaded,
+        "checkpoint": ortho.ckpt,
+        "llm_path": ortho.llm_path,
+        "model": ortho.model_id,
+        "fold": ortho.model_fold,
+    }
+
+
 @app.get("/")
 def read_root():
     return {"message": "DentalLama API 서버가 정상적으로 실행 중입니다."}
@@ -398,7 +461,12 @@ def read_root():
 @app.get("/health")
 def health_check():
     """서버 상태 확인 엔드포인트"""
+    ortho = orthoplanner_system
     return {
         "status": "healthy",
-        "features": ["pdf_text_extraction", "dental_inference"]
+        "features": ["pdf_text_extraction", "dental_inference", "orthoplanner"],
+        "orthoplanner": {
+            "loaded": bool(ortho and ortho.loaded),
+            "checkpoint": ortho.ckpt if ortho else None,
+        },
     }

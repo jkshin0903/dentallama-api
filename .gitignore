@@ -1,4 +1,9 @@
-models/
+models/*
+!models/orthoplanner/
+models/orthoplanner/*
+!models/orthoplanner/orthoplanner/
+!models/orthoplanner/orthoplanner/**
+!models/orthoplanner/config.yaml
 references/
 __pycache__/
 logs/

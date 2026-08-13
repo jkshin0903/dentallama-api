@@ -1,0 +1,53 @@
+# OrthoPlanner Stage-2 inference config.
+# Paths are relative to models/orthoplanner/.
+
+# --- paths ---
+ceph_ckpt: pretrained/hrnet_scratch.pt
+text_encoder_path: pretrained/pubmedbert_ortho_scratch
+llm_path: Llama_3.1_8B-Instruct
+
+# --- data ---
+eval_fold: 0
+input_size: 768
+text_max_length: 256
+max_len: 512
+
+# --- Stage-1 frozen encoder ---
+tau: 0.07
+
+# --- GUSR reasoner ---
+d_model: 768
+n_heads: 8
+n_geom_layers: 2
+n_cross_layers: 2
+queries_per_factor: 2
+dropout: 0.1
+
+# --- LLM / LoRA ---
+fp16: true
+lora_r: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_targets: [q_proj, k_proj, v_proj, o_proj]
+
+# --- loss weights ---
+lambda_measure: 0.5
+lambda_attr: 0.5
+lambda_calib: 0.1
+
+# --- modality dropout ---
+vision_dropout_p: 0.1
+text_dropout_p: 0.2
+
+# --- optimization (unused at inference) ---
+epochs: 12
+batch_size: 1
+grad_accum: 8
+lr_reasoner: 1.0e-4
+lr_lora: 5.0e-5
+weight_decay: 0.05
+warmup_ratio: 0.1
+clip_grad: 1.0
+num_workers: 4
+seed: 42
+cuda: 0

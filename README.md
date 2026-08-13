@@ -16,7 +16,7 @@
 - **DentalInference**  
   - 선택된 모델 + PEFT 어댑터를 로드해 멀티모달 추론 수행  
   - BGE-M3 임베딩 + Milvus를 통한 RAG 검색 결과를 프롬프트에 삽입  
-  - `/api/chat` 요청마다 전역 인스턴스를 재사용하므로 서버 부팅 시 한 번만 모델을 초기화
+  - `/api/v1/gemma/treatment-plan` 요청마다 전역 인스턴스를 재사용하므로 서버 부팅 시 한 번만 모델을 초기화
 - **파일 파이프라인**  
   - base64로 전달된 이미지·PDF를 임시 파일로 복원  
   - PDF는 PyMuPDF로 텍스트 추출 후 응답 본문에 첨부  
@@ -95,7 +95,9 @@ uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
 ## API
 
-### `POST /api/chat`
+### `POST /api/v1/gemma/treatment-plan`
+Gemma 멀티모달 추론. 한글 4필드 치료계획. 이전 경로 `/api/chat`도 동일하게 동작합니다.
+
 | 필드 | 설명 |
 | --- | --- |
 | `messages` | 최소 1개의 사용자 메시지 필요. 마지막 메시지의 `content`가 진단 텍스트 혹은 JSON(payload: `diagnosis`, `measurements`, `use_rag`) |
@@ -108,8 +110,12 @@ uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 }
 ```
 
+### `POST /api/v1/orthoplanner/treatment-plan`
+OrthoPlanner 추론. 영어 치료계획 문장 + decision head. 이전 경로 `/api/v1/treatment-plan`도 동일하게 동작합니다.
+
 ### `GET /` · `GET /health`
-- 서버 상태, 활성 기능(`dental_inference`, `pdf_text_extraction`) 확인
+- 서버 상태, 활성 기능(`dental_inference`, `pdf_text_extraction`, `orthoplanner`) 확인
+- OrthoPlanner 로드 상태: `GET /api/v1/orthoplanner/health`
 
 ---
 
